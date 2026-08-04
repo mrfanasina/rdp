@@ -1,0 +1,44 @@
+{
+  "metadata": { "version": "1.0", "timestamp": "2026-08-03T00:00:00.000Z", "kind": "rdp" },
+  "statement": "Énoncé — Exclusion mutuelle (imprimante partagée)\n\nDeux processus A et B se partagent une même imprimante. Chaque processus alterne entre repos, attente d'impression, et impression effective. L'imprimante est modélisée par une place \"ressource\" à un seul jeton : un processus doit l'obtenir avant d'imprimer et la restitue à la fin.\n\nAu marquage initial, A et B sont tous deux au repos et l'imprimante est libre. Dès que les deux processus demandent l'impression en même temps, T2 (A obtient l'imprimante) et T5 (B obtient l'imprimante) devienne un CONFLIT potentiel dès qu'ils sont tous deux en attente : un seul jeton \"imprimante libre\" existe, donc un seul processus peut imprimer à la fois.",
+  "places": [
+    { "id": "p1", "label": "P1", "x": 160, "y": 120, "description": "Processus A au repos" },
+    { "id": "p2", "label": "P2", "x": 340, "y": 120, "description": "Processus A en attente d'impression" },
+    { "id": "p3", "label": "P3", "x": 520, "y": 120, "description": "Processus A en train d'imprimer" },
+    { "id": "p7", "label": "P7", "x": 340, "y": 300, "capacity": 1, "description": "Imprimante libre — ressource partagée (1 jeton)" },
+    { "id": "p4", "label": "P4", "x": 160, "y": 480, "description": "Processus B au repos" },
+    { "id": "p5", "label": "P5", "x": 340, "y": 480, "description": "Processus B en attente d'impression" },
+    { "id": "p6", "label": "P6", "x": 520, "y": 480, "description": "Processus B en train d'imprimer" }
+  ],
+  "transitions": [
+    { "id": "t1", "label": "T1", "x": 250, "y": 120, "description": "A demande l'impression" },
+    { "id": "t2", "label": "T2", "x": 430, "y": 190, "description": "A obtient l'imprimante et commence à imprimer" },
+    { "id": "t3", "label": "T3", "x": 430, "y": 50,  "description": "A termine l'impression et rend l'imprimante" },
+    { "id": "t4", "label": "T4", "x": 250, "y": 480, "description": "B demande l'impression" },
+    { "id": "t5", "label": "T5", "x": 430, "y": 410, "description": "B obtient l'imprimante et commence à imprimer" },
+    { "id": "t6", "label": "T6", "x": 430, "y": 550, "description": "B termine l'impression et rend l'imprimante" }
+  ],
+  "arcs": [
+    { "id": "a1",  "from": "p1", "to": "t1", "weight": 1 },
+    { "id": "a2",  "from": "t1", "to": "p2", "weight": 1 },
+    { "id": "a3",  "from": "p2", "to": "t2", "weight": 1 },
+    { "id": "a4",  "from": "p7", "to": "t2", "weight": 1 },
+    { "id": "a5",  "from": "t2", "to": "p3", "weight": 1 },
+    { "id": "a6",  "from": "p3", "to": "t3", "weight": 1 },
+    { "id": "a7",  "from": "t3", "to": "p1", "weight": 1 },
+    { "id": "a8",  "from": "t3", "to": "p7", "weight": 1 },
+    { "id": "a9",  "from": "p4", "to": "t4", "weight": 1 },
+    { "id": "a10", "from": "t4", "to": "p5", "weight": 1 },
+    { "id": "a11", "from": "p5", "to": "t5", "weight": 1 },
+    { "id": "a12", "from": "p7", "to": "t5", "weight": 1 },
+    { "id": "a13", "from": "t5", "to": "p6", "weight": 1 },
+    { "id": "a14", "from": "p6", "to": "t6", "weight": 1 },
+    { "id": "a15", "from": "t6", "to": "p4", "weight": 1 },
+    { "id": "a16", "from": "t6", "to": "p7", "weight": 1 }
+  ],
+  "initialMarking": {
+    "p1": 1, "p2": 0, "p3": 0,
+    "p7": 1,
+    "p4": 1, "p5": 0, "p6": 0
+  }
+}
