@@ -326,3 +326,10 @@ canevas) et par le glisser-déposer d'un fichier `.json`.
 | <kbd>Échap</kbd> | Annuler l'action en cours / fermer une modale |
 
 ---
+## 👤 Auteur
+
+**mrfanasina**
+
+- GitHub : [@mrfanasina](https://github.com/mrfanasina)
+
+---
