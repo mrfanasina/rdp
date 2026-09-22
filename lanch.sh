@@ -5,7 +5,7 @@
 # =====================================
 
 APP_DIR="/home/fa/development/RO_M1/"
-FRONTEND_DIR="$APP_DIR/rdp"
+FRONTEND_DIR="$APP_DIR/rdpcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccszzwwxxxxxxxxxxxww"
 
 GREEN="\e[32m"
 RED="\e[31m"

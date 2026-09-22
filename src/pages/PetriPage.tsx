@@ -7,13 +7,19 @@ import PetriLegend from "../components/petri/PetriLegend";
 import PetriIncidenceMatrix from "../components/petri/PetriIncidenceMatrix";
 import AddPetriNodeForm from "../components/petri/AddPetriNodeForm";
 import { usePetriStore } from "../store/petriStore";
+import { PETRI_NETS } from "../constants/petriConstants";
+
+interface PetriPageProps {
+  /** Retour à la page de présentation (sujet principal). */
+  onBackToPresentation: () => void;
+}
 
 // Le volet gauche n'affiche plus qu'un seul contenu à la fois : l'éditeur
 // JSON, la légende pédagogique (énoncé du projet + "P1 : ...", "T1 : ...")
 // ou la matrice d'incidence (Pre / Post / W). `null` = volet fermé.
 type LeftPanel = "json" | "legend" | "matrix" | null;
 
-export default function PetriPage() {
+export default function PetriPage({ onBackToPresentation }: PetriPageProps) {
   const {
     places,
     transitions,
@@ -23,11 +29,9 @@ export default function PetriPage() {
     setStatement,
     error,
     clearError,
-    resetSimulation,
-    setPlaces,
-    setTransitions,
-    setArcs,
-    setInitialMarking,
+    activePreset,
+    loadPreset,
+    loadNet,
     addPlace,
     addTransition,
     currentStepIndex,
@@ -50,6 +54,11 @@ export default function PetriPage() {
   useEffect(() => {
     if (showAddNodeForm) setAddArcMode(false);
   }, [showAddNodeForm]);
+
+  // Changement de réseau prédéfini depuis le sélecteur du header.
+  const handleSwitchPreset = (slug: keyof typeof PETRI_NETS) => {
+    loadPreset(slug);
+  };
 
   // UX : Empêcher la page de se quitter sans confirmation
   useEffect(() => {
@@ -118,13 +127,15 @@ export default function PetriPage() {
         if (!Array.isArray(data.places) || !Array.isArray(data.transitions) || !Array.isArray(data.arcs)) {
           throw new Error("Format de fichier invalide structurellement.");
         }
-        setPlaces(data.places);
-        setTransitions(data.transitions);
-        setArcs(data.arcs);
-        setInitialMarking(data.initialMarking ?? {});
-        // Rétrocompatible : les anciens fichiers exportés sans `statement`
-        // vident simplement le champ plutôt que de faire échouer l'import.
-        setStatement(typeof data.statement === "string" ? data.statement : "");
+        // Un seul point d'entrée : loadNet normalise le marquage, remplace
+        // le réseau et réinitialise la simulation.
+        loadNet({
+          places: data.places,
+          transitions: data.transitions,
+          arcs: data.arcs,
+          initialMarking: data.initialMarking ?? {},
+          statement: typeof data.statement === "string" ? data.statement : "",
+        });
       } catch (err) {
         alert("Fichier JSON invalide pour ce réseau de Petri.");
         console.error(err);
@@ -161,7 +172,7 @@ export default function PetriPage() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(netData, null, 2));
     const a = document.createElement("a");
     a.setAttribute("href", dataStr);
-    a.setAttribute("download", `rdp-carrefour-${Date.now()}.json`);
+    a.setAttribute("download", `rdp-${activePreset}-${Date.now()}.json`);
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -204,15 +215,39 @@ export default function PetriPage() {
         isDarkMode ? "border-white/5 bg-slate-900/40 shadow-sm shadow-black/10" : "border-slate-200/60 bg-white/60 shadow-sm shadow-slate-100"
       }`}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-tr from-emerald-400 to-emerald-500 rounded-lg flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/10 transform hover:scale-105 transition-transform duration-200">
-            <span className="font-black text-sm">🚦</span>
-          </div>
+          <button
+            onClick={onBackToPresentation}
+            title="Retour à la page de présentation"
+            className="w-8 h-8 bg-gradient-to-tr from-emerald-400 to-emerald-500 rounded-lg flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/10 transform hover:scale-105 transition-transform duration-200"
+          >
+            <span className="font-black text-sm">₥</span>
+          </button>
           <div className="flex flex-col">
             <h1 className={`text-[11px] font-bold tracking-widest uppercase ${isDarkMode ? "text-slate-200" : "text-slate-800"}`}>
               Réseau de Petri
             </h1>
-            <p className="text-[10px] text-emerald-500 font-medium tracking-wide">Carrefour à feux tricolores</p>
+            <p className="text-[10px] text-emerald-500 font-medium tracking-wide">
+              {activePreset === "mobile-money" ? "Agent Mobile Money (sujet principal)" : "Carrefour à feux tricolores (démo)"}
+            </p>
           </div>
+
+          {/* Sélecteur de réseau prédéfini : le sujet principal (Mobile Money)
+              et l'ancien sujet (Carrefour, conservé en démo) restent
+              interchangeables à tout moment. */}
+          <select
+            value={activePreset}
+            onChange={(e) => handleSwitchPreset(e.target.value as keyof typeof PETRI_NETS)}
+            title="Changer de réseau prédéfini"
+            className={`ml-2 px-2 py-1 rounded-lg text-[10px] font-medium border outline-none cursor-pointer transition-colors ${
+              isDarkMode ? "bg-slate-950/50 border-white/10 text-slate-300" : "bg-white border-slate-200 text-slate-600"
+            }`}
+          >
+            {Object.entries(PETRI_NETS).map(([slug, net]) => (
+              <option key={slug} value={slug}>
+                {net.title}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center gap-4">

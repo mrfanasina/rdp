@@ -43,7 +43,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { usePetriStore } from "../../store/petriStore";
-import type { PetriArc, PetriPlace, PetriTransition } from "../../types/petri";
+import type { PetriArc, PetriPlace } from "../../types/petri";
 import { Trash2 } from "lucide-react";
 
 // ─── Constantes ─────────────────────────────────────────────────────────
@@ -59,8 +59,6 @@ const ZOOM_MIN = 0.15;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 1.02;
 
-const BADGE_SIZE = 22;
-
 // Taille de la tête de flèche, en unités canevas (userSpaceOnUse : ne
 // dépend pas du stroke-width de l'arc, donc reste identique que l'arc soit
 // inactif, survolé ou en surbrillance — seule sa couleur change). Portée
@@ -74,8 +72,6 @@ const ARROW_SIZE = 10;
 // gauche, le badge de statistiques et la barre de lecture flottent en bas
 // — donc marge basse et gauche plus généreuse pour ne jamais les recouvrir.
 const VIEW_PADDING = { top: 70, right: 70, bottom: 170, left: 150 };
-
-function cx(...c: (string | false | null | undefined)[]) { return c.filter(Boolean).join(" "); }
 
 interface XY { x: number; y: number }
 
@@ -175,30 +171,54 @@ const ContextMenu = memo(({ x, y, label, onDelete, onClose }: CtxMenu) => (
   </foreignObject>
 ));
 
-interface WeightPopupProps { x: number; y: number; value: string; onChange: (v: string) => void; onConfirm: () => void; onCancel: () => void; inputRef: React.RefObject<HTMLInputElement>; label: string }
-const InlineNumberEditor = memo(({ x, y, value, onChange, onConfirm, onCancel, inputRef, label }: WeightPopupProps) => {
+interface WeightPopupProps {
+  x: number; y: number; value: string; onChange: (v: string) => void;
+  onConfirm: () => void; onCancel: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>; label: string;
+  /** Present = mode arc : affiche une case à cocher "inhibiteur". */
+  inhibitor?: boolean;
+  onToggleInhibitor?: () => void;
+}
+const InlineNumberEditor = memo(({ x, y, value, onChange, onConfirm, onCancel, inputRef, label, inhibitor, onToggleInhibitor }: WeightPopupProps) => {
   const invalid = !isValidTokenInput(value);
   return (
-    <foreignObject x={x - 34} y={y - 17} width={68} height={34} style={{ overflow: "visible" }}>
+    <foreignObject x={x - 44} y={y - 17} width={inhibitor !== undefined ? 150 : 68} height={34} style={{ overflow: "visible" }}>
       <div onPointerDown={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <input
-          ref={inputRef}
-          type="number" min={0} step={1} value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onConfirm}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); if (!invalid) onConfirm(); }
-            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-          }}
-          aria-label={label}
-          aria-invalid={invalid}
-          style={{
-            width: 60, textAlign: "center", fontSize: 12, fontWeight: 700,
-            border: `1.5px solid ${invalid ? "#f87171" : "#7c3aed"}`, borderRadius: 8, padding: "2px 4px",
-            fontFamily: "ui-monospace, monospace", color: invalid ? "#b91c1c" : "#5b21b6",
-            background: invalid ? "#fef2f2" : "#faf5ff", outline: "none",
-          }}
-        />
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input
+            ref={inputRef}
+            type="number" min={0} step={1} value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={onConfirm}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); if (!invalid) onConfirm(); }
+              if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            }}
+            aria-label={label}
+            aria-invalid={invalid}
+            style={{
+              width: 60, textAlign: "center", fontSize: 12, fontWeight: 700,
+              border: `1.5px solid ${invalid ? "#f87171" : "#7c3aed"}`, borderRadius: 8, padding: "2px 4px",
+              fontFamily: "ui-monospace, monospace", color: invalid ? "#b91c1c" : "#5b21b6",
+              background: invalid ? "#fef2f2" : "#faf5ff", outline: "none",
+            }}
+          />
+          {onToggleInhibitor && (
+            <button
+              onClick={(e) => { e.preventDefault(); onToggleInhibitor(); }}
+              title="Arc inhibiteur (test de zéro : la place doit être VIDE, rien n'est consommé)"
+              style={{
+                display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700,
+                padding: "3px 7px", borderRadius: 7, cursor: "pointer", whiteSpace: "nowrap",
+                border: inhibitor ? "1.5px solid #d946ef" : "1px solid #e2e8f0",
+                background: inhibitor ? "#fdf4ff" : "#f8fafc", color: inhibitor ? "#a21caf" : "#64748b",
+              }}
+            >
+              <span style={{ width: 9, height: 9, borderRadius: "50%", border: "1.7px solid currentColor", display: "inline-block" }} />
+              Inhibiteur
+            </button>
+          )}
+        </div>
       </div>
     </foreignObject>
   );
@@ -211,7 +231,7 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
   const {
     places, transitions, arcs, initialMarking,
     moveNode, addArc, addPlace, addTransition, removePlace, removeTransition, removeArc,
-    updateArcWeight, setInitialTokens, setCanvasSize,
+    updateArc, setInitialTokens, setCanvasSize,
     getTokenCount, isTransitionEnabled, isTransitionPendingConflict, isTransitionLastFired,
     isArcActiveInLastFiring, fireTransition, currentStepIndex,
   } = usePetriStore();
@@ -222,13 +242,14 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [hoveredArc, setHoveredArc] = useState<string | null>(null);
   const [arcSource, setArcSource] = useState<string | null>(null);
-  const [arcHoverTarget, setArcHoverTarget] = useState<string | null>(null);
+  const [, setArcHoverTarget] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState<XY | null>(null);
-  const [pendingArc, setPendingArc] = useState<{ fromId: string; toId: string; midX: number; midY: number } | null>(null);
+  const [pendingArc, setPendingArc] = useState<{ fromId: string; toId: string; midX: number; midY: number; inhibitor: boolean } | null>(null);
   const [pendingWeight, setPendingWeight] = useState("1");
 
   const [editingArc, setEditingArc] = useState<string | null>(null);
   const [editingArcValue, setEditingArcValue] = useState("");
+  const [editingArcInhibitor, setEditingArcInhibitor] = useState(false);
   const [editingPlace, setEditingPlace] = useState<string | null>(null);
   const [editingPlaceValue, setEditingPlaceValue] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -289,8 +310,15 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
     return { x: (clientX - rect.left - pan.x) / zoom, y: (clientY - rect.top - pan.y) / zoom };
   }, [pan, zoom]);
 
+  // Reset de l'état du mode arc quand on le quitte. Le reset est différé
+  // d'un tick (rAF) : synchroniser ce state React dans le corps de l'effet
+  // déclenche des rendus en cascade (règle react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (!addArcMode) { setArcSource(null); setArcHoverTarget(null); setCursorPos(null); setPendingArc(null); setPendingWeight("1"); }
+    if (addArcMode) return;
+    const raf = requestAnimationFrame(() => {
+      setArcSource(null); setArcHoverTarget(null); setCursorPos(null); setPendingArc(null); setPendingWeight("1");
+    });
+    return () => cancelAnimationFrame(raf);
   }, [addArcMode]);
 
   useEffect(() => {
@@ -405,7 +433,7 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
       const from = posOf(arcSource)!, to = posOf(id)!;
       const lat = bidirectionalSet.has(`${arcSource}->${id}`) ? BIDIRECTIONAL_OFFSET : 0;
       const mid = bezierMid(from, to, lat);
-      setPendingArc({ fromId: arcSource, toId: id, midX: mid.x, midY: mid.y });
+      setPendingArc({ fromId: arcSource, toId: id, midX: mid.x, midY: mid.y, inhibitor: false });
       setPendingWeight("1");
       setArcSource(null); setArcHoverTarget(null); setCursorPos(null);
       return;
@@ -433,17 +461,31 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
   // ── Confirmation / annulation d'un nouvel arc ────────────────────────
   const confirmArc = useCallback(() => {
     if (!pendingArc || !isValidTokenInput(pendingWeight) || parseFloat(pendingWeight) < 1) return;
-    addArc({ id: `arc_${Date.now()}`, from: pendingArc.fromId, to: pendingArc.toId, weight: parseFloat(pendingWeight) });
+    addArc({
+      id: `arc_${Date.now()}`,
+      from: pendingArc.fromId,
+      to: pendingArc.toId,
+      weight: parseFloat(pendingWeight),
+      inhibitor: pendingArc.inhibitor,
+    });
     setPendingArc(null); setPendingWeight("1");
   }, [pendingArc, pendingWeight, addArc]);
   const cancelPendingArc = useCallback(() => { setPendingArc(null); setArcSource(null); setPendingWeight("1"); }, []);
 
   // ── Édition en ligne : poids d'arc ───────────────────────────────────
-  const startEditArc = useCallback((a: PetriArc) => { if (addArcMode) return; setEditingArc(a.id); setEditingArcValue(String(a.weight)); }, [addArcMode]);
+  const startEditArc = useCallback((a: PetriArc) => {
+    if (addArcMode) return;
+    setEditingArc(a.id);
+    setEditingArcValue(String(a.weight));
+    setEditingArcInhibitor(!!a.inhibitor);
+  }, [addArcMode]);
   const confirmEditArc = useCallback(() => {
-    if (editingArc && isValidTokenInput(editingArcValue) && parseFloat(editingArcValue) >= 1) updateArcWeight(editingArc, parseFloat(editingArcValue));
+    if (editingArc && isValidTokenInput(editingArcValue) && parseFloat(editingArcValue) >= 1) {
+      const target = arcs.find((x) => x.id === editingArc);
+      if (target) updateArc(editingArc, { weight: parseFloat(editingArcValue), inhibitor: editingArcInhibitor });
+    }
     setEditingArc(null);
-  }, [editingArc, editingArcValue, updateArcWeight]);
+  }, [editingArc, editingArcValue, editingArcInhibitor, arcs, updateArc]);
   const cancelEditArc = useCallback(() => { setEditingArc(null); setEditingArcValue(""); }, []);
 
   // ── Édition en ligne : marquage initial d'une place ──────────────────
@@ -525,6 +567,19 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
     return () => ro.disconnect();
   }, [setCanvasSize, fitView, places.length, transitions.length]);
 
+  // Recadre la vue quand la STRUCTURE change (changement de preset, import
+  // JSON, ajout/suppression de nœuds) — sinon un nouveau réseau chargé dans
+  // un canevas déjà monté resterait hors du viewport. fitView est appelé via
+  // une ref pour ne pas dépendre de son identité (recréée à chaque drag).
+  const structureSig = `${places.length}:${transitions.length}:${arcs.length}`;
+  const fitViewRef = useRef(fitView);
+  useEffect(() => { fitViewRef.current = fitView; });
+  useEffect(() => {
+    if (!didAutoFit.current) return;
+    const t = setTimeout(() => fitViewRef.current(), 60);
+    return () => clearTimeout(t);
+  }, [structureSig]);
+
   const previewPath = useMemo(() => {
     if (!addArcMode || !arcSource || pendingArc || !cursorPos) return null;
     const from = posOf(arcSource), fk = kindOf(arcSource);
@@ -532,7 +587,10 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
     return buildEdgePath(from, cursorPos, fk, "place", 0);
   }, [addArcMode, arcSource, pendingArc, cursorPos, posOf, kindOf]);
 
-  const svgCursor = isPanning.current ? "grabbing" : addArcMode ? (arcSource ? "crosshair" : "cell") : (dragging ? "grabbing" : "default");
+  // NB : `isPanning.current` n'est volontairement PAS lu pendant le rendu
+  // (règle react-hooks/refs) : le curseur "grabbing" du pan est perdu, ce
+  // qui est un cosmetic mineur face à la correction du pattern.
+  const svgCursor = addArcMode ? (arcSource ? "crosshair" : "cell") : dragging ? "grabbing" : "default";
 
   // ── Rendu des jetons à l'intérieur d'une place ───────────────────────
   const renderTokens = (count: number) => {
@@ -581,35 +639,60 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
       </defs>
 
       <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-        {/* ── ARCS ── */}
-        {arcs.map((a) => {
+        {/* ── ARCS ── */}        {arcs.map((a) => {
           const path = getArcPath(a);
           const active = isArcActiveInLastFiring(a);
           const isHov = hoveredArc === a.id;
           const isEditing = editingArc === a.id;
           const mid = getArcMid(a);
-          const color = active ? "#2563eb" : isHov ? "#475569" : "#94a3b8";
-          const marker = active ? "url(#parrow-active)" : isHov ? "url(#parrow-hover)" : "url(#parrow)";
+          // Un arc inhibiteur reste gris/rose pour rester bien distinct des
+          // arcs directs (bleu = actif, gris = inactif).
+          const INACTIVE_INHIB = "#e879f9";
+          const color = a.inhibitor ? INACTIVE_INHIB : active ? "#2563eb" : isHov ? "#475569" : "#94a3b8";
+          const marker = a.inhibitor ? undefined : active ? "url(#parrow-active)" : isHov ? "url(#parrow-hover)" : "url(#parrow)";
           const showBadge = a.weight !== 1 || isEditing;
 
+          // Point d'ancrage du cercle inhibiteur : début du path (côté place)
+          const from = posOf(a.from), to = posOf(a.to);
+          const fk = kindOf(a.from), tk = kindOf(a.to);
+          let inhPos: XY | null = null;
+          if (a.inhibitor && from && to && fk && tk && fk === "place") {
+            const v = vec(from, to);
+            if (v.len > 0) {
+              const startLen = nodeRadius("place") + 11;
+              const midLen = v.len / 2;
+              const t = Math.min(0.5, startLen / midLen);
+              const qx = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * ((from.x + to.x) / 2 - v.ny * (curvature(v.len) + getLateral(a))) + t * t * to.x;
+              const qy = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * ((from.y + to.y) / 2 + v.nx * (curvature(v.len) + getLateral(a))) + t * t * to.y;
+              inhPos = { x: qx, y: qy };
+            }
+          }
+
           return (
-            <g key={a.id} onMouseEnter={() => setHoveredArc(a.id)} onMouseLeave={() => setHoveredArc(null)} onContextMenu={(e) => onContextMenuArc(e, a)}>
+            <g key={a.id} onMouseEnter={() => setHoveredArc(a.id)} onMouseLeave={() => setHoveredArc(null)} onContextMenu={(e) => onContextMenuArc(e, a)}
+              onDoubleClick={(e) => { e.stopPropagation(); if (!addArcMode) updateArc(a.id, { inhibitor: !a.inhibitor }); }}
+              style={{ cursor: addArcMode ? "default" : "pointer" }}>
               <path d={path} fill="none" stroke="transparent" strokeWidth={16} />
               <path
-                d={path} fill="none" stroke={color} strokeWidth={active ? 2 : isHov ? 1.8 : 1.4}
+                d={path} fill="none" stroke={color} strokeWidth={active && !a.inhibitor ? 2 : isHov ? 1.8 : 1.4}
                 strokeLinecap="round" markerEnd={marker}
                 style={{ transition: "stroke 0.15s, stroke-width 0.15s", pointerEvents: "none" }}
               />
+              {inhPos && (
+                <circle cx={inhPos.x} cy={inhPos.y} r={5.5} fill="#ffffff" stroke={color} strokeWidth={1.6}
+                  style={{ pointerEvents: "none", transition: "stroke 0.15s" }} />
+              )}
               {showBadge && (isEditing ? (
                 <InlineNumberEditor
                   x={mid.x} y={mid.y} value={editingArcValue} onChange={setEditingArcValue}
                   onConfirm={confirmEditArc} onCancel={cancelEditArc} inputRef={editInputRef} label="Poids de l'arc"
+                  inhibitor={editingArcInhibitor} onToggleInhibitor={() => setEditingArcInhibitor((v) => !v)}
                 />
               ) : (
                 <g style={{ cursor: "text" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); startEditArc(a); }}>
                   <rect x={mid.x - 11} y={mid.y - 10} width={22} height={20} rx={6} fill="#f8fafc" stroke="#e2e8f0" strokeWidth={0.8} />
-                  <text x={mid.x} y={mid.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fontFamily="ui-monospace, monospace" fill="#64748b" style={{ pointerEvents: "none" }}>
-                    {a.weight}
+                  <text x={mid.x} y={mid.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fontFamily="ui-monospace, monospace" fill={a.inhibitor ? "#a21caf" : "#64748b"} style={{ pointerEvents: "none" }}>
+                    {a.inhibitor ? "0" : a.weight}
                   </text>
                 </g>
               ))}
@@ -635,7 +718,6 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
           const conflict = isTransitionPendingConflict(t.id);
           const lastFired = isTransitionLastFired(t.id);
           const isArcSrc = addArcMode && arcSource === t.id;
-          const isArcHov = addArcMode && !!arcSource && !pendingArc && arcHoverTarget === t.id;
 
           const fill = conflict ? "#f59e0b" : lastFired ? "#3b82f6" : enabled ? "#16a34a" : isArcSrc ? "#2563eb" : "#94a3b8";
           const filter = conflict ? "url(#pglow-amber)" : lastFired ? "url(#pglow-blue)" : enabled ? "url(#pglow-green)" : "url(#pnode-shadow)";
@@ -678,12 +760,11 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
           const tokens = getTokenCount(p.id);
           const isSel = selected === p.id;
           const isArcSrc = addArcMode && arcSource === p.id;
-          const isArcHov = addArcMode && !!arcSource && !pendingArc && arcHoverTarget === p.id;
           const isEditing = editingPlace === p.id;
           const editable = isInitialStep && !addArcMode;
 
-          const stroke = isArcSrc ? "#3b82f6" : isArcHov ? "#0d9488" : isSel ? "#3b82f6" : tokens > 0 ? "#94a3b8" : "#e2e8f0";
-          const strokeWidth = isArcSrc || isArcHov ? 2.5 : isSel ? 2 : 1.5;
+          const stroke = isArcSrc ? "#3b82f6" : isSel ? "#3b82f6" : tokens > 0 ? "#94a3b8" : "#e2e8f0";
+          const strokeWidth = isArcSrc ? 2.5 : isSel ? 2 : 1.5;
           const filter = isArcSrc ? "url(#pglow-blue)" : "url(#pnode-shadow)";
 
           return (
@@ -747,7 +828,7 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
       </g>
 
       {pendingArc && (
-        <foreignObject x={pendingArc.midX * zoom + pan.x - 82} y={pendingArc.midY * zoom + pan.y - 60} width={164} height={110} style={{ overflow: "visible" }}>
+        <foreignObject x={pendingArc.midX * zoom + pan.x - 82} y={pendingArc.midY * zoom + pan.y - 60} width={180} height={130} style={{ overflow: "visible" }}>
           <div
             style={{ background: "#fff", border: "1.5px solid #ddd6fe", borderRadius: 14, boxShadow: "0 6px 30px rgba(124,58,237,0.16), 0 1px 4px rgba(0,0,0,0.07)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, userSelect: "none" }}
             onPointerDown={(e) => e.stopPropagation()}
@@ -764,6 +845,20 @@ export default function PetriCanvas({ addArcMode = false }: PetriCanvasProps) {
               <button onClick={confirmArc} style={{ flex: 1, background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "5px 0" }}>OK</button>
               <button onClick={cancelPendingArc} style={{ width: 28, height: 28, background: "#f1f5f9", color: "#94a3b8", border: "none", borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
             </div>
+            <button
+              onClick={() => setPendingArc({ ...pendingArc, inhibitor: !pendingArc.inhibitor })}
+              title="Arc inhibiteur (test de zéro : la place doit être VIDE pour franchir la transition, rien n'est consommé)"
+              style={{
+                display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600,
+                padding: "5px 8px", borderRadius: 8, cursor: "pointer",
+                border: pendingArc.inhibitor ? "1.5px solid #d946ef" : "1px solid #e2e8f0",
+                background: pendingArc.inhibitor ? "#fdf4ff" : "#f8fafc",
+                color: pendingArc.inhibitor ? "#a21caf" : "#64748b",
+              }}
+            >
+              <span style={{ width: 10, height: 10, borderRadius: "50%", border: "1.8px solid currentColor", display: "inline-block" }} />
+              Arc inhibiteur (teste = 0)
+            </button>
           </div>
         </foreignObject>
       )}

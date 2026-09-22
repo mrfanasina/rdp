@@ -20,20 +20,15 @@
 
 import { create } from "zustand";
 import type {
-  PetriPlace, PetriTransition, PetriArc, Marking, FiringStep, IncidenceMatrices,
+  PetriPlace, PetriTransition, PetriArc, Marking, FiringStep, IncidenceMatrices, PetriNetPreset,
 } from "../types/petri";
 import {
-  INITIAL_PLACES, INITIAL_TRANSITIONS, INITIAL_ARCS, INITIAL_MARKING, PETRI_STATEMENT,
+  getPresetBySlug,
 } from "../constants/petriConstants";
 
 const ARRANGE_MARGIN_X = 90;
 const ARRANGE_MARGIN_Y = 70;
 const ARRANGE_MAX_SCALE = 1.2;
-
-/** Génère un id lisible et unique à partir d'un préfixe. */
-function genId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-}
 
 interface PetriStore {
   // ── Structure du réseau ──────────────────────────────────────────────
@@ -41,6 +36,14 @@ interface PetriStore {
   transitions: PetriTransition[];
   arcs: PetriArc[];
   initialMarking: Marking;
+
+  /**
+   * Preset actuellement chargé ("mobile-money" par défaut, "carrefour"
+   * historique conservé en démo). Piloté par PresentationPage et le
+   * sélecteur de PetriPage.
+   */
+  activePreset: PetriNetPreset;
+  loadPreset: (preset: PetriNetPreset) => void;
 
   /**
    * Énoncé / explication du projet en cours de modélisation (texte libre).
@@ -57,6 +60,14 @@ interface PetriStore {
   setPlaces: (p: PetriPlace[]) => void;
   setTransitions: (t: PetriTransition[]) => void;
   setArcs: (a: PetriArc[]) => void;
+  /** Remplace le réseau en bloc (import JSON, éditeur, preset) : reset de la simulation. */
+  loadNet: (net: {
+    places: PetriPlace[];
+    transitions: PetriTransition[];
+    arcs: PetriArc[];
+    initialMarking?: Marking;
+    statement?: string;
+  }) => void;
 
   addPlace: (p: PetriPlace) => void;
   addTransition: (t: PetriTransition) => void;
@@ -67,6 +78,8 @@ interface PetriStore {
   removeArc: (id: string) => void;
   moveNode: (id: string, x: number, y: number) => void;
   updateArcWeight: (id: string, weight: number) => void;
+  /** Édite poids et/ou nature (direct ↔ inhibiteur) d'un arc existant. */
+  updateArc: (id: string, patch: { weight?: number; inhibitor?: boolean }) => void;
   /** Édite le marquage INITIAL d'une place (seulement pertinent à l'étape 0). */
   setInitialTokens: (placeId: string, tokens: number) => void;
   /** Remplace le marquage initial en bloc (utilisé par l'import JSON de PetriPage). */
@@ -137,13 +150,38 @@ interface PetriStore {
   arrangeGraph: () => void;
 }
 
-export const usePetriStore = create<PetriStore>((set, get) => ({
-  places: INITIAL_PLACES,
-  transitions: INITIAL_TRANSITIONS,
-  arcs: INITIAL_ARCS,
-  initialMarking: { ...INITIAL_MARKING },
+// Réseau chargé au démarrage : le sujet principal (Mobile Money).
+const DEFAULT_PRESET = getPresetBySlug("mobile-money")!;
 
-  statement: PETRI_STATEMENT,
+export const usePetriStore = create<PetriStore>((set, get) => ({
+  places: DEFAULT_PRESET.places,
+  transitions: DEFAULT_PRESET.transitions,
+  arcs: DEFAULT_PRESET.arcs,
+  initialMarking: { ...DEFAULT_PRESET.initialMarking },
+  activePreset: "mobile-money",
+
+  loadPreset: (preset) => {
+    const p = getPresetBySlug(preset);
+    if (!p) return;
+    set({ activePreset: preset });
+    get().loadNet(p);
+  },
+
+  loadNet: ({ places, transitions, arcs, initialMarking, statement }) => {
+    // Normalise : toute place absente du marquage fourni démarre à 0.
+    const marking: Marking = {};
+    places.forEach((p) => { marking[p.id] = initialMarking?.[p.id] ?? 0; });
+    set({
+      places,
+      transitions,
+      arcs,
+      initialMarking: marking,
+      ...(statement !== undefined ? { statement } : {}),
+    });
+    get().resetSimulation();
+  },
+
+  statement: DEFAULT_PRESET.statement,
   setStatement: (statement) => set({ statement }),
 
   canvasWidth: 800,
@@ -186,7 +224,8 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
 
   removePlace: (id) => {
     set((s) => {
-      const { [id]: _removed, ...rest } = s.initialMarking;
+      const rest = { ...s.initialMarking };
+      delete rest[id];
       return {
         places: s.places.filter((p) => p.id !== id),
         arcs: s.arcs.filter((a) => a.from !== id && a.to !== id),
@@ -221,6 +260,14 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
     get().resetSimulation();
   },
 
+  /** Édite poids et/ou nature (direct ↔ inhibiteur) d'un arc. */
+  updateArc: (id, patch) => {
+    set((s) => ({
+      arcs: s.arcs.map((a) => (a.id === id ? { ...a, ...patch, weight: patch.weight ?? a.weight } : a)),
+    }));
+    get().resetSimulation();
+  },
+
   setInitialTokens: (placeId, tokens) => {
     set((s) => ({ initialMarking: { ...s.initialMarking, [placeId]: Math.max(0, tokens) } }));
     get().resetSimulation();
@@ -235,7 +282,7 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
   history: [{
     iteration: 0,
     description: "Marquage initial",
-    marking: { ...INITIAL_MARKING },
+    marking: { ...DEFAULT_PRESET.initialMarking },
     enabledTransitions: [],
     wasConflict: false,
   }],
@@ -251,7 +298,12 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
     return transitions
       .filter((t) => {
         const inputArcs = arcs.filter((a) => a.to === t.id);
-        return inputArcs.every((a) => (marking[a.from] ?? 0) >= a.weight);
+        // Arcs directs : assez de jetons ? Arcs inhibiteurs : place VIDE ?
+        return inputArcs.every((a) =>
+          a.inhibitor
+            ? (marking[a.from] ?? 0) === 0
+            : (marking[a.from] ?? 0) >= a.weight
+        );
       })
       .map((t) => t.id);
   },
@@ -260,6 +312,7 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
     const { arcs } = get();
     const next = { ...marking };
     arcs.forEach((a) => {
+      if (a.inhibitor) return; // un arc inhibiteur ne consomme RIEN au tir
       if (a.to === transitionId) next[a.from] = (next[a.from] ?? 0) - a.weight;       // place → transition (consommé)
       if (a.from === transitionId) next[a.to] = (next[a.to] ?? 0) + a.weight;         // transition → place (produit)
     });
@@ -384,14 +437,24 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
     const { places, transitions, arcs } = get();
     const placeIds = places.map((p) => p.id);
     const transitionIds = transitions.map((t) => t.id);
+    // Pre/Post ne tiennent compte que des arcs DIRECTS : un arc inhibiteur
+    // n'est ni une consommation (Pre) ni une production (Post) — c'est un
+    // test de zéro, reporté séparément dans `required`.
     const pre = placeIds.map((pid) =>
-      transitionIds.map((tid) => arcs.find((a) => a.from === pid && a.to === tid)?.weight ?? 0)
+      transitionIds.map((tid) =>
+        arcs.find((a) => a.from === pid && a.to === tid && !a.inhibitor)?.weight ?? 0
+      )
     );
     const post = placeIds.map((pid) =>
       transitionIds.map((tid) => arcs.find((a) => a.from === tid && a.to === pid)?.weight ?? 0)
     );
     const w = pre.map((row, i) => row.map((v, j) => post[i][j] - v));
-    return { placeIds, transitionIds, pre, post, w };
+    const required = placeIds.map((pid) =>
+      transitionIds.map((tid) =>
+        arcs.find((a) => a.from === pid && a.to === tid && a.inhibitor) ? 1 : 0
+      )
+    );
+    return { placeIds, transitionIds, pre, post, w, required };
   },
 
   error: null,
@@ -428,27 +491,32 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
           if (rank[nb] === -1) { rank[nb] = rank[cur] + 1; queue.push(nb); }
         });
       }
-      let maxRank = Math.max(1, ...Object.values(rank).filter((r) => r >= 0));
+      const maxRank = Math.max(1, ...Object.values(rank).filter((r) => r >= 0));
       allNodes.forEach((n) => { if (rank[n.id] === -1) rank[n.id] = maxRank; }); // nœuds isolés en fin
 
       const usableW = canvasWidth - ARRANGE_MARGIN_X * 2;
       const usableH = canvasHeight - ARRANGE_MARGIN_Y * 2;
 
-      const simNodes = allNodes.map((n) => ({
+      // Types minimaux pour d3-force (évite les `any` tout en restant souple
+      // sur le couplage typé exact de la lib).
+      type SimNode = { id: string; x: number; y: number };
+      type SimLink = { source: string | SimNode; target: string | SimNode; dist: number };
+
+      const simNodes: SimNode[] = allNodes.map((n) => ({
         id: n.id,
         x: ARRANGE_MARGIN_X + (rank[n.id] / maxRank) * usableW + (Math.random() - 0.5) * 30,
         y: canvasHeight / 2 + (Math.random() - 0.5) * usableH * 0.6,
       }));
 
-      const simLinks = arcs.map((a) => ({ source: a.from, target: a.to, dist: 90 + Math.random() * 30 }));
+      const simLinks: SimLink[] = arcs.map((a) => ({ source: a.from, target: a.to, dist: 90 + Math.random() * 30 }));
 
-      const simulation = forceSimulation(simNodes as any)
-        .force("link", forceLink(simLinks as any).id((d: any) => d.id).distance((l: any) => l.dist).strength(0.6))
-        .force("charge", forceManyBody().strength(-420).distanceMax(500))
-        .force("center", forceCenter(canvasWidth / 2, canvasHeight / 2).strength(0.03))
-        .force("collide", forceCollide(38).strength(0.9).iterations(3))
-        .force("x", forceX((d: any) => ARRANGE_MARGIN_X + (rank[d.id] / maxRank) * usableW).strength(0.28))
-        .force("y", forceY(canvasHeight / 2).strength(0.06))
+      const simulation = forceSimulation<SimNode>(simNodes)
+        .force("link", forceLink<SimNode, SimLink>(simLinks).id((d) => d.id).distance((l) => l.dist).strength(0.6))
+        .force("charge", forceManyBody<SimNode>().strength(-420).distanceMax(500))
+        .force("center", forceCenter<SimNode>(canvasWidth / 2, canvasHeight / 2).strength(0.03))
+        .force("collide", forceCollide<SimNode>(38).strength(0.9).iterations(3))
+        .force("x", forceX<SimNode>((d) => ARRANGE_MARGIN_X + (rank[d.id] / maxRank) * usableW).strength(0.28))
+        .force("y", forceY<SimNode>(canvasHeight / 2).strength(0.06))
         .alphaDecay(0.025)
         .velocityDecay(0.4)
         .stop();
@@ -457,7 +525,7 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
       for (let i = 0; i < iterations; i++) simulation.tick();
 
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      simNodes.forEach((p: any) => {
+      simNodes.forEach((p) => {
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
         minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
       });
@@ -467,14 +535,14 @@ export const usePetriStore = create<PetriStore>((set, get) => ({
       const offX = (canvasWidth - graphW * scale) / 2 - minX * scale;
       const offY = (canvasHeight - graphH * scale) / 2 - minY * scale;
 
-      const byId = new Map(simNodes.map((p: any) => [p.id, p]));
+      const byId = new Map(simNodes.map((p) => [p.id, p]));
       set({
         places: places.map((p) => {
-          const s = byId.get(p.id) as any;
+          const s = byId.get(p.id);
           return s ? { ...p, x: s.x * scale + offX, y: s.y * scale + offY } : p;
         }),
         transitions: transitions.map((t) => {
-          const s = byId.get(t.id) as any;
+          const s = byId.get(t.id);
           return s ? { ...t, x: s.x * scale + offX, y: s.y * scale + offY } : t;
         }),
       });

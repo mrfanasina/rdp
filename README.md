@@ -2,20 +2,39 @@
 
 Un éditeur + simulateur de **Réseau de Petri** (RDP) en React/TypeScript,
 avec canevas SVG, historique de franchissement navigable, résolution de
-conflits, import/export JSON, et une matrice d'incidence (Pré / Post / W)
-calculée automatiquement.
+conflits, **arcs inhibiteurs**, import/export JSON, et une matrice
+d'incidence (Pré / Post / W) calculée automatiquement.
 
-L'exemple fourni par défaut modélise un **carrefour à feux tricolores** à
-deux axes (Nord-Sud / Est-Ouest) — voir [Énoncé du projet](#énoncé-du-projet)
-ci-dessous, qui voyage désormais avec le réseau lui-même (champ `statement`
-du JSON, § [Format JSON](#format-json)).
+## Sujet principal : Agent Mobile Money
+
+L'application est centrée sur le sujet **« Gestion des transactions chez un
+agent Mobile Money »** (RdP coloré et temporisé avec arcs inhibiteurs,
+version 3) : dépôts, retraits et transferts chez un agent à guichet unique,
+avec deux ressources antagonistes (caisse cash / solde électronique) gérées
+en paliers Normale/Réserve, alerte préventive et réapprovisionnement en
+parallèle du service client.
+
+- L'énoncé complet se trouve dans [`docs/sujet_rdp_mobile_money.md`](docs/sujet_rdp_mobile_money.md).
+- La page d'accueil est une **présentation du sujet** (thème clair/sombre,
+  transitions animées au scroll, aperçu du réseau interactif) — voir
+  `src/pages/PresentationPage.tsx`.
+- Le réseau simulé est la **version dépliée par couleurs** : une transition
+  concrète par opération × palier (T6a/T6b, T7a/T7b…), alertes et
+  réapprovisionnements par ressource (T9a/T9b, T10a/T10b, T11a/T11b).
+- Les gardes « palier Normale = 0 » du sujet sont modélisées par des **arcs
+  inhibiteurs** (dessinés avec une extrémité cercle ⊙ côté place ; double-clic
+  sur un arc pour basculer direct ↔ inhibiteur).
+
+L'ancien sujet (**carrefour à feux tricolores**) est conservé comme
+**démo** : accessible depuis la présentation, ou via le sélecteur de réseau
+du simulateur.
 
 ---
 
 ## Sommaire
 
+- [Sujet principal : Agent Mobile Money](#sujet-principal--agent-mobile-money)
 - [Aperçu du projet](#aperçu-du-projet)
-- [Énoncé du projet](#énoncé-du-projet)
 - [Architecture](#architecture)
 - [Modèle de données](#modèle-de-données)
 - [Format JSON (import / export)](#format-json)
@@ -97,28 +116,37 @@ Légende ou dans le champ `statement` du JSON.
 
 ```
 components/petri/
-  PetriCanvas.tsx          Canevas SVG : rendu, édition, simulation au clic
+  PetriCanvas.tsx          Canevas SVG : rendu, édition, simulation au clic,
+                           arcs inhibiteurs (⊙, bascule par double-clic)
   PetriControls.tsx        Barre de lecture (précédent/suivant/play/vitesse…)
   PetriEditor.tsx          Éditeur JSON en ligne (places/transitions/arcs)
   PetriLegend.tsx          Légende pédagogique : énoncé + description P*/T*
-  PetriIncidenceMatrix.tsx Matrice d'incidence Pré / Post / W
+  PetriIncidenceMatrix.tsx Matrice d'incidence Pré / Post / W (+ Required)
   PetriStepsPanel.tsx      Historique de franchissement (volet droit)
   AddPetriNodeForm.tsx     Formulaire modal d'ajout de place/transition
 
 store/
   petriStore.ts            Store Zustand : structure du réseau, marquage,
-                            historique de simulation, sélecteurs, layout
+                            historique de simulation, sélecteurs, layout,
+                            presets (loadPreset/loadNet)
 
 constants/
-  petriConstants.ts        Réseau par défaut (carrefour à feux) + PETRI_STATEMENT
+  petriConstants.ts        Registre des réseaux prédéfinis :
+                            "mobile-money" (sujet principal) et "carrefour"
+                            (démo), avec énoncés intégrés
 
 types/
   petri.ts                 Types partagés (PetriPlace, PetriTransition,
-                            PetriArc, Marking, FiringStep, IncidenceMatrices…)
+                            PetriArc + inhibitor, Marking, FiringStep…)
 
 pages/
-  PetriPage.tsx             Page complète : layout, dock, import/export,
-                            volets latéraux, aide
+  PresentationPage.tsx     Page d'accueil : présentation du sujet principal
+                           (thème, transitions au scroll, aperçu interactif)
+  PetriPage.tsx            Simulateur complet : layout, dock, import/export,
+                           volets latéraux, aide, sélecteur de réseau
+
+docs/
+  sujet_rdp_mobile_money.md  Énoncé officiel du sujet principal (v3)
 ```
 
 Le module RDP est un miroir volontaire du module Dantzig (`GraphCanvas` /
@@ -154,6 +182,7 @@ interface PetriArc {
   from: string;            // id d'une place OU d'une transition
   to: string;               // le type opposé de `from` (bipartisme obligatoire)
   weight: number;           // poids/multiplicité (défaut : 1)
+  inhibitor?: boolean;      // arc inhibiteur : exige place VIDE, ne consomme rien
 }
 
 type Marking = Record<string /* placeId */, number /* jetons */>;
@@ -255,6 +284,12 @@ canevas) et par le glisser-déposer d'un fichier `.json`.
   les fichiers exportés avant son ajout).
 - **`description`** (sur une place ou une transition) est optionnel ; s'il
   est présent, il alimente la Légende et l'infobulle au survol du nœud.
+- **`inhibitor`** (sur un arc) est optionnel (`false` par défaut). Un arc
+  inhibiteur exige que la place source soit **vide** pour que la transition
+  soit franchissable, et n'y consomme **rien** au tir — c'est le test de
+  zéro classique (TINA le supporte nativement). Rendu avec une extrémité
+  cercle ⊙ côté place et un badge `0` ; bascule direct ↔ inhibiteur par
+  double-clic sur l'arc, ou case « Arc inhibiteur » lors de sa création.
 - **`capacity`** (sur une place) est optionnel et purement informatif dans
   la version actuelle (il n'est pas encore utilisé pour borner le nombre
   de jetons pendant la simulation).
@@ -301,6 +336,7 @@ canevas) et par le glisser-déposer d'un fichier `.json`.
 | Résoudre un conflit | Cliquer l'une des transitions ambre en conflit |
 | Déplacer un nœud | Glisser-déposer |
 | Tracer un arc | Mode arc (bouton dock ou <kbd>A</kbd>) → cliquer une place puis une transition (ou l'inverse) |
+| Arc inhibiteur | Case « Arc inhibiteur » dans la popup de création, ou double-clic sur un arc existant |
 | Modifier un poids d'arc | Cliquer son badge, taper la valeur, <kbd>Entrée</kbd> |
 | Éditer le marquage initial | À l'étape 0, cliquer les jetons d'une place |
 | Ajouter un nœud | Double-clic sur le fond (place) ; <kbd>Alt</kbd> + double-clic (transition) ; ou bouton/<kbd>N</kbd> |
@@ -326,10 +362,41 @@ canevas) et par le glisser-déposer d'un fichier `.json`.
 | <kbd>Échap</kbd> | Annuler l'action en cours / fermer une modale |
 
 ---
+## Ce qui a changé récemment
+
+1. **Sujet principal : Agent Mobile Money** — la porte d'entrée de
+   l'application est désormais une **page de présentation** du sujet
+   (`PresentationPage.tsx`) : hero, explication du problème (3 opérations ×
+   2 ressources opposées), mécanique paliers Normale/Réserve + alerte
+   préventive, propriétés à analyser (§7 du sujet), thème clair/sombre et
+   **transitions animées au scroll** (IntersectionObserver + CSS). Un
+   aperçu du réseau y est directement interactif, avec bascule
+   Mobile Money ↔ Carrefour. L'ancienne page simulateur est conservée
+   telle quelle et devient la **démo** (`?view=demo` en deep-link, bouton
+   « Ouvrir la démo », ou depuis la présentation).
+
+2. **Réseau Mobile Money déplié** (`petriConstants.ts`) : 14 places, 17
+   transitions, 60 arcs — les couleurs Opération/Ressource du sujet sont
+   dépliées en transitions concrètes (T6a/T6b, T7a/T7b, T9a/T9b, T9c/T9d,
+   T10a/T10b, T11a/T11b), P9/P10 colorées dépliées par ressource
+   (P9c/P9e, P10c/P10e). Le carrefour reste disponible comme preset.
+
+3. **Arcs inhibiteurs** : nouveau champ `inhibitor` sur `PetriArc`, pris
+   en compte partout — `computeEnabled` (test de zéro), `applyFiring`
+   (aucune consommation), matrice d'incidence (`Required` séparée de
+   Pre/Post/W), rendu canevas (⊙ + badge `0`), création/édition. Les
+   anciens fichiers JSON (sans `inhibitor`) restent valides.
+
+4. **Presets et navigation** : `loadPreset(slug)` / `loadNet(net)` dans le
+   store ; sélecteur de réseau dans le header du simulateur ; énoncé
+   (`statement`) éditable dans la Légende et inclus dans l'export ;
+   `PetriLegend` affiche maintenant l'énoncé en tête de panneau.
+
+---
+
 ## 👤 Auteur
 
 **mrfanasina**
 
 - GitHub : [@mrfanasina](https://github.com/mrfanasina)
 
----

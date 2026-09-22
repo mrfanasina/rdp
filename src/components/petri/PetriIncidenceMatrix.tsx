@@ -64,8 +64,9 @@ interface PetriIncidenceMatrixProps {
 }
 
 export default function PetriIncidenceMatrix({ isDarkMode }: PetriIncidenceMatrixProps) {
-  const { places, transitions, getIncidenceMatrices } = usePetriStore();
-  const { placeIds, transitionIds, pre, post, w } = getIncidenceMatrices();
+  const { places, transitions, arcs, getIncidenceMatrices } = usePetriStore();
+  const { placeIds, transitionIds, pre, post, w, required } = getIncidenceMatrices();
+  const hasInhibitors = arcs.some((a) => a.inhibitor);
 
   if (placeIds.length === 0 || transitionIds.length === 0) {
     return (
@@ -91,6 +92,18 @@ export default function PetriIncidenceMatrix({ isDarkMode }: PetriIncidenceMatri
       <MatrixTable title="Pre" placeLabels={placeLabels} transitionLabels={transitionLabels} data={pre} isDarkMode={isDarkMode} />
       <MatrixTable title="Post" placeLabels={placeLabels} transitionLabels={transitionLabels} data={post} isDarkMode={isDarkMode} />
       <MatrixTable title="W = Post − Pre" placeLabels={placeLabels} transitionLabels={transitionLabels} data={w} isDarkMode={isDarkMode} />
+      {/* Les arcs inhibiteurs ne sont ni consommation ni production : ils
+          sont reportés à part (test de zéro), sinon Pre/Post/W seraient
+          faux. Utile pour le réseau Mobile Money (gardes « = 0 »). */}
+      {hasInhibitors && required && (
+        <MatrixTable
+          title="Required (arcs inhibiteurs : la place doit être VIDE pour tirer)"
+          placeLabels={placeLabels}
+          transitionLabels={transitionLabels}
+          data={required}
+          isDarkMode={isDarkMode}
+        />
+      )}
     </div>
   );
 }

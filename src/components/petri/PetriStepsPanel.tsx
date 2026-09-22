@@ -89,7 +89,6 @@ export default function PetriStepsPanel({ isDarkMode }: Props) {
           {history.map((step, i) => {
             const isCurrent = i === currentStepIndex;
             const isPast = i < currentStepIndex;
-            const t = step.firedTransition ? transitions.find((tr) => tr.id === step.firedTransition) : null;
             return (
               <button
                 key={i}

@@ -1,6 +1,9 @@
 // components/petri/PetriControls.tsx
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePetriStore } from "../../store/petriStore";
+
+/** setInterval sous une forme indépendante du runtime (évite le namespace NodeJS). */
+type TimerRef = ReturnType<typeof setInterval> | null;
 
 type Speed = 0.5 | 1 | 2 | 3 | 5 | 10;
 type ButtonVariant = "default" | "danger" | "success" | "primary";
@@ -167,7 +170,7 @@ const SPEEDS: Speed[] = [0.5, 1, 2, 3, 5, 10];
 export default function PetriControls() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<Speed>(1);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<TimerRef>(null);
 
   const {
     history, currentStepIndex, pendingConflict,
@@ -177,11 +180,13 @@ export default function PetriControls() {
 
   const totalSteps = history.length;
 
-  const handleReset = () => {
+  // useCallback : rend handleReset référentiellement stable pour satisfaire
+  // react-hooks/exhaustive-deps dans l'effet des raccourcis clavier.
+  const handleReset = useCallback(() => {
     setIsPlaying(false);
     if (timerRef.current) clearInterval(timerRef.current);
     resetSimulation();
-  };
+  }, [resetSimulation]);
 
   const cycleSpeed = () => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length]);
 
@@ -215,7 +220,11 @@ export default function PetriControls() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isPlaying, speed, isBlocked, goToNextStep]);
 
-  // Raccourcis clavier
+  // Raccourcis clavier — handleReset/handlePlayPause/cycleSpeed/dispatch sont
+  // recréés à chaque rendu mais restent comportementalement stables ; on les
+  // exclut volontairement des dépendances pour ne pas réattacher le listener
+  // à chaque frappe d'état du store.
+   
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -236,7 +245,7 @@ export default function PetriControls() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [currentStepIndex, goToNextStep, goToPreviousStep, goToFirstStep, goToLastStep, arrangeGraph]);
+  }, [currentStepIndex, goToNextStep, goToPreviousStep, goToFirstStep, goToLastStep, arrangeGraph, handleReset]);
 
   return (
     <>

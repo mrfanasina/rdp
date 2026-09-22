@@ -19,3 +19,47 @@
     background: rgba(156, 163, 175, 0.4);
   }
 }
+
+/* ── Page de présentation : animations ────────────────────────────── */
+
+/* Révélation au scroll (IntersectionObserver ajoute .reveal-visible). */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+  .petri-float-slow,
+  .petri-pulse-cta {
+    animation: none;
+  }
+}
+
+/* Halo flottant en fond (décor discret de la présentation). */
+@keyframes petri-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-3%, 4%) scale(1.06); }
+}
+.petri-float-slow {
+  animation: petri-float 14s ease-in-out infinite;
+}
+
+/* Pulsation douce du CTA principal (attire l'œil sans agresser). */
+@keyframes petri-pulse-cta {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35), 0 20px 25px -5px rgba(5, 150, 105, 0.25); }
+  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0), 0 20px 25px -5px rgba(5, 150, 105, 0.25); }
+}
+.petri-pulse-cta {
+  animation: petri-pulse-cta 2.6s ease-in-out infinite;
+}
