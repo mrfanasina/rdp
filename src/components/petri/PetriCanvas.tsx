@@ -85,14 +85,86 @@ function curvature(len: number) { return Math.min(MAX_CURVE, len * CURVE_FACTOR)
 /** Rayon effectif d'un nœud selon son type, pour rogner les tracés à son bord. */
 function nodeRadius(kind: "place" | "transition") { return kind === "place" ? PLACE_RADIUS : TRANS_H / 2; }
 
+/**
+ * Intersection d'une demi-droite (origine `o`, direction unitaire `d`) avec un
+ * disque de centre `c` et de rayon `r`. Renvoie la plus petite distance
+ * positive, ou null si la demi-droite ne coupe pas le disque.
+ */
+function rayCircleEntry(o: XY, d: XY, c: XY, r: number): number | null {
+  const ox = o.x - c.x, oy = o.y - c.y;
+  const b = ox * d.x + oy * d.y;
+  const q = ox * ox + oy * oy - r * r;
+  const disc = b * b - q;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc);
+  const s1 = -b - sq, s2 = -b + sq;
+  if (s1 > 0.01) return s1;
+  if (s2 > 0.01) return s2;
+  return null;
+}
+
+/**
+ * Intersection d'une demi-droite (origine `o`, direction unitaire `d`) avec un
+ * rectangle axis-aligné centré en `c` (demi-largeur `hw`, demi-hauteur `hh`) —
+ * méthode des "slabs". Renvoie la plus petite distance positive d'entrée, ou
+ * null si la demi-droite ne coupe pas le rectangle.
+ */
+function rayRectEntry(o: XY, d: XY, c: XY, hw: number, hh: number): number | null {
+  let best = Infinity;
+  if (d.x !== 0) {
+    for (const edge of [c.x - hw, c.x + hw]) {
+      const s = (edge - o.x) / d.x;
+      if (s > 0.01) {
+        const y = o.y + s * d.y;
+        if (y >= c.y - hh && y <= c.y + hh) best = Math.min(best, s);
+      }
+    }
+  }
+  if (d.y !== 0) {
+    for (const edge of [c.y - hh, c.y + hh]) {
+      const s = (edge - o.y) / d.y;
+      if (s > 0.01) {
+        const x = o.x + s * d.x;
+        if (x >= c.x - hw && x <= c.x + hw) best = Math.min(best, s);
+      }
+    }
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+/**
+ * Point exact où l'arc touche le bord du nœud `center` (place = disque,
+ * transition = rectangle), le long de la droite (contrôle → centre) — c'est la
+ * tangente de la Bézier à son extrémité, donc l'arc arrive toujours "collé" au
+ * nœud, quelle que soit sa courbure. Repli : rognage le long de la ligne
+ * centre → centre (comportement historique) si la géométrie est dégénérée.
+ */
+function shapeEntry(ctrl: XY, center: XY, kind: "place" | "transition", fallbackDir: XY): XY {
+  const dx = center.x - ctrl.x, dy = center.y - ctrl.y;
+  const dl = Math.hypot(dx, dy);
+  const dir = dl > 0.01 ? { x: dx / dl, y: dy / dl } : fallbackDir;
+  const s = kind === "place"
+    ? rayCircleEntry(ctrl, dir, center, PLACE_RADIUS)
+    : rayRectEntry(ctrl, dir, center, TRANS_W / 2, TRANS_H / 2);
+  if (s === null) {
+    return { x: center.x - fallbackDir.x * nodeRadius(kind), y: center.y - fallbackDir.y * nodeRadius(kind) };
+  }
+  return { x: ctrl.x + dir.x * s, y: ctrl.y + dir.y * s };
+}
+
 function buildEdgePath(from: XY, to: XY, fromKind: "place" | "transition", toKind: "place" | "transition", lateralOffset = 0): string {
   const { len, nx, ny } = vec(from, to);
   if (len < 2) return "";
-  const x1 = from.x + nx * nodeRadius(fromKind), y1 = from.y + ny * nodeRadius(fromKind);
-  const x2 = to.x - nx * nodeRadius(toKind), y2 = to.y - ny * nodeRadius(toKind);
   const totalOffset = curvature(len) + lateralOffset;
-  const mx = (x1 + x2) / 2 - ny * totalOffset, my = (y1 + y2) / 2 + nx * totalOffset;
-  return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
+  const mx = (from.x + to.x) / 2 - ny * totalOffset, my = (from.y + to.y) / 2 + nx * totalOffset;
+  // Rogne chaque extrémité à l'intersection de la tangente (contrôle ↔ centre)
+  // avec la forme RÉELLE du nœud : disque pour une place, rectangle 14×52 pour
+  // une transition. Avant, le rognage utilisait un rayon circulaire même pour
+  // les transitions → un arc entrant par le petit côté s'arrêtait ~19 px avant
+  // le rectangle (26 − 7), d'où des flèches "détachées" des transitions.
+  const p1 = shapeEntry({ x: mx, y: my }, from, fromKind, { x: -nx, y: -ny });
+  const p2 = shapeEntry({ x: mx, y: my }, to, toKind, { x: nx, y: ny });
+  return `M ${p1.x} ${p1.y} Q ${mx} ${my} ${p2.x} ${p2.y}`;
 }
 function bezierMid(from: XY, to: XY, lateralOffset = 0): XY {
   const { len, ny, nx } = vec(from, to);
