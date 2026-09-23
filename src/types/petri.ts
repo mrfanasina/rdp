@@ -99,4 +99,4 @@ export function isTransitionId(id: string): boolean {
  * Types de réseaux prédéfinis (presets) chargeables depuis l'UI — voir
  * constants/petriConstants.ts et mobileMoneyConstants.ts.
  */
-export type PetriNetPreset = "mobile-money" | "carrefour";
+export type PetriNetPreset = "centre-tri" | "station-recharge" | "mobile-money" | "carrefour";

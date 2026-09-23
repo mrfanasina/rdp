@@ -38,9 +38,9 @@ interface PetriStore {
   initialMarking: Marking;
 
   /**
-   * Preset actuellement chargé ("mobile-money" par défaut, "carrefour"
-   * historique conservé en démo). Piloté par PresentationPage et le
-   * sélecteur de PetriPage.
+   * Preset actuellement chargé ("centre-tri" par défaut — sujet principal ;
+   * "mobile-money" ancien sujet et "carrefour" démo, conservés). Piloté
+   * par PresentationPage et le sélecteur de PetriPage.
    */
   activePreset: PetriNetPreset;
   loadPreset: (preset: PetriNetPreset) => void;
@@ -150,15 +150,15 @@ interface PetriStore {
   arrangeGraph: () => void;
 }
 
-// Réseau chargé au démarrage : le sujet principal (Mobile Money).
-const DEFAULT_PRESET = getPresetBySlug("mobile-money")!;
+// Réseau chargé au démarrage : le sujet principal (Centre de tri de colis).
+const DEFAULT_PRESET = getPresetBySlug("centre-tri")!;
 
 export const usePetriStore = create<PetriStore>((set, get) => ({
   places: DEFAULT_PRESET.places,
   transitions: DEFAULT_PRESET.transitions,
   arcs: DEFAULT_PRESET.arcs,
   initialMarking: { ...DEFAULT_PRESET.initialMarking },
-  activePreset: "mobile-money",
+  activePreset: "centre-tri",
 
   loadPreset: (preset) => {
     const p = getPresetBySlug(preset);

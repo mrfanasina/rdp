@@ -5,35 +5,64 @@ avec canevas SVG, historique de franchissement navigable, résolution de
 conflits, **arcs inhibiteurs**, import/export JSON, et une matrice
 d'incidence (Pré / Post / W) calculée automatiquement.
 
-## Sujet principal : Agent Mobile Money
+## Sujets modélisés
 
-L'application est centrée sur le sujet **« Gestion des transactions chez un
-agent Mobile Money »** (RdP coloré et temporisé avec arcs inhibiteurs,
-version 3) : dépôts, retraits et transferts chez un agent à guichet unique,
-avec deux ressources antagonistes (caisse cash / solde électronique) gérées
-en paliers Normale/Réserve, alerte préventive et réapprovisionnement en
-parallèle du service client.
+### 1. Sujet principal : Centre de tri de colis avec contrôle qualité
 
-- L'énoncé complet se trouve dans [`docs/sujet_rdp_mobile_money.md`](docs/sujet_rdp_mobile_money.md).
-- La page d'accueil est une **présentation du sujet** (thème clair/sombre,
-  transitions animées au scroll, aperçu du réseau interactif) — voir
-  `src/pages/PresentationPage.tsx`.
-- Le réseau simulé est la **version dépliée par couleurs** : une transition
-  concrète par opération × palier (T6a/T6b, T7a/T7b…), alertes et
-  réapprovisionnements par ressource (T9a/T9b, T10a/T10b, T11a/T11b).
-- Les gardes « palier Normale = 0 » du sujet sont modélisées par des **arcs
-  inhibiteurs** (dessinés avec une extrémité cercle ⊙ côté place ; double-clic
-  sur un arc pour basculer direct ↔ inhibiteur).
+Une **seule machine de tri automatique**, un contrôle qualité après chaque
+passage : colis conforme → expédié (P5), non conforme → retour en file
+pour retri, mais au plus **K = 3** fois, puis rejet définitif (P6). RdP
+coloré (couleur = nombre d'essais `e ∈ {0..K}`) et temporisé (T1 :
+arrivées, T3 : passage machine ≈ 5 s).
 
-L'ancien sujet (**carrefour à feux tricolores**) est conservé comme
-**démo** : accessible depuis la présentation, ou via le sélecteur de réseau
-du simulateur.
+- Énoncé complet : [`docs/projet_rdp_centre_tri.md`](docs/projet_rdp_centre_tri.md).
+- Le réseau simulé garde la **structure du cours** : P1..P6 · T1..T6.
+- La couleur « essai e » est matérialisée par deux conventions de
+  simulation documentées : le compteur **P7** (`e = K − jetons(P7)`,
+  garde « e < K » de T5 = arc direct, garde « e = K » de T6 = **arc
+  inhibiteur** ⊙) et le stock fini **P8** (T1 est une transition source
+  dans le sujet : sans stock fini, la simulation ne finirait jamais).
+- Le conflit du cours **T4/T5/T6** sur le jeton de P4 se rejoue au clic.
+
+### 2. Deuxième sujet : Station de recharge pour véhicules électriques
+
+**N = 6 points de charge** identiques partagés entre des véhicules
+**Rapides** (≈ 20 min) et **Standards** (≈ 2 h) ; un véhicule qui attend
+trop longtemps (**≈ 15 min**) abandonne la file. RdP coloré
+(couleur = type de véhicule) et temporisé.
+
+- Énoncé complet : [`docs/projet_rdp_station_recharge.md`](docs/projet_rdp_station_recharge.md).
+- La couleur ne change **que le délai de T3** : structure du cours
+  conservée à l'identique — P1..P5 · T1..T4, aucun dépliage nécessaire.
+- Invariant de capacité : `PointsLibres + EnCharge = N` (T2 et T3
+  déplacent le jeton, T1/T4 n'y touchent jamais).
+- **Compétition** T2 (branchement, immédiate) vs T4 (abandon, temporisée)
+  sur la file P2 — rejouable au clic.
+- Même convention de simulation que le sujet principal : **P6
+  StockArrivees** (2 véhicules) rend la terminaison démontrable.
+
+### Anciens sujets (conservés)
+
+- **Agent Mobile Money** — gestion des transactions (dépôt/retrait/
+  transfert) chez un agent à guichet unique, ressources cash/e-value en
+  paliers Normale/Réserve, alerte préventive + réapprovisionnement.
+  Énoncé : [`docs/sujet_rdp_mobile_money.md`](docs/sujet_rdp_mobile_money.md).
+  Réseau **déplié par couleurs** : une transition par opération × palier
+  (T6a/T6b, T7a/T7b…), alertes et réappro par ressource (T9a/T9b,
+  T10a/T10b, T11a/T11b) ; gardes « palier Normale = 0 » en **arcs
+  inhibiteurs** ⊙.
+- **Carrefour à feux tricolores** — l'exemple historique de l'application
+  (exclusion mutuelle entre deux axes), conservé comme **démo**.
+
+Tous les réseaux sont interchangeables à tout moment : onglets de l'aperçu
+sur la page de présentation, ou sélecteur de réseau dans le header du
+simulateur.
 
 ---
 
 ## Sommaire
 
-- [Sujet principal : Agent Mobile Money](#sujet-principal--agent-mobile-money)
+- [Sujets modélisés](#sujets-modélisés)
 - [Aperçu du projet](#aperçu-du-projet)
 - [Architecture](#architecture)
 - [Modèle de données](#modèle-de-données)
@@ -132,8 +161,10 @@ store/
 
 constants/
   petriConstants.ts        Registre des réseaux prédéfinis :
-                            "mobile-money" (sujet principal) et "carrefour"
-                            (démo), avec énoncés intégrés
+                            "centre-tri" (sujet principal),
+                            "station-recharge" (2ᵉ sujet), "mobile-money"
+                            et "carrefour" (anciens sujets), avec énoncés
+                            intégrés
 
 types/
   petri.ts                 Types partagés (PetriPlace, PetriTransition,
@@ -146,7 +177,9 @@ pages/
                            volets latéraux, aide, sélecteur de réseau
 
 docs/
-  sujet_rdp_mobile_money.md  Énoncé officiel du sujet principal (v3)
+  projet_rdp_centre_tri.md     Énoncé du sujet principal (centre de tri)
+  projet_rdp_station_recharge.md  Énoncé du 2ᵉ sujet (station de recharge)
+  sujet_rdp_mobile_money.md    Énoncé de l'ancien sujet Mobile Money
 ```
 
 Le module RDP est un miroir volontaire du module Dantzig (`GraphCanvas` /
@@ -364,30 +397,43 @@ canevas) et par le glisser-déposer d'un fichier `.json`.
 ---
 ## Ce qui a changé récemment
 
-1. **Sujet principal : Agent Mobile Money** — la porte d'entrée de
-   l'application est désormais une **page de présentation** du sujet
-   (`PresentationPage.tsx`) : hero, explication du problème (3 opérations ×
-   2 ressources opposées), mécanique paliers Normale/Réserve + alerte
-   préventive, propriétés à analyser (§7 du sujet), thème clair/sombre et
-   **transitions animées au scroll** (IntersectionObserver + CSS). Un
-   aperçu du réseau y est directement interactif, avec bascule
-   Mobile Money ↔ Carrefour. L'ancienne page simulateur est conservée
-   telle quelle et devient la **démo** (`?view=demo` en deep-link, bouton
-   « Ouvrir la démo », ou depuis la présentation).
+1. **Sujet principal : Centre de tri de colis** — la page de présentation
+   (`PresentationPage.tsx`) présente désormais ce sujet : hero, mécanique
+   de la boucle de reprise bornée (compteur d'essais K = 3), propriétés à
+   démontrer (§7 du sujet), thème clair/sombre et **transitions animées
+   au scroll**. L'aperçu interactif permet de basculer entre le sujet
+   principal, la station de recharge et l'ancien sujet Mobile Money.
 
-2. **Réseau Mobile Money déplié** (`petriConstants.ts`) : 14 places, 17
-   transitions, 60 arcs — les couleurs Opération/Ressource du sujet sont
-   dépliées en transitions concrètes (T6a/T6b, T7a/T7b, T9a/T9b, T9c/T9d,
-   T10a/T10b, T11a/T11b), P9/P10 colorées dépliées par ressource
-   (P9c/P9e, P10c/P10e). Le carrefour reste disponible comme preset.
+2. **Deuxième sujet : Station de recharge VE** — ajouté comme preset
+   `"station-recharge"` (`petriConstants.ts`) et documenté sur la page de
+   présentation (section dédiée) : N = 6 points de charge partagés,
+   véhicules Rapide/Standard (la couleur ne change que le délai de T3),
+   abandons par timeout, compétition T2/T4 sur la file. Convention de
+   simulation P6 StockArrivees pour la terminaison.
 
-3. **Arcs inhibiteurs** : nouveau champ `inhibitor` sur `PetriArc`, pris
-   en compte partout — `computeEnabled` (test de zéro), `applyFiring`
+3. **Réseau centre de tri compact et fidèle au cours** — 8 places,
+   6 transitions : structure P1..P6 · T1..T6 du sujet, la couleur « essai
+   e » matérialisée par le compteur **P7** (garde « e < K » = arc direct,
+   garde « e = K » = arc inhibiteur ⊙) et le stock fini **P8** (T1 est
+   une transition source dans le sujet : le stock rend la terminaison
+   démontrable en simulation).
+
+4. **Réseau Mobile Money déplié** (ancien sujet, conservé) : 14 places,
+   17 transitions, 60 arcs — les couleurs Opération/Ressource du sujet
+   sont dépliées en transitions concrètes (T6a/T6b, T7a/T7b, T9a/T9b,
+   T9c/T9d, T10a/T10b, T11a/T11b), P9/P10 colorées dépliées par
+   ressource (P9c/P9e, P10c/P10e). Le carrefour reste disponible comme
+   preset de démo.
+
+5. **Arcs inhibiteurs** : champ `inhibitor` sur `PetriArc`, pris en
+   compte partout — `computeEnabled` (test de zéro), `applyFiring`
    (aucune consommation), matrice d'incidence (`Required` séparée de
    Pre/Post/W), rendu canevas (⊙ + badge `0`), création/édition. Les
-   anciens fichiers JSON (sans `inhibitor`) restent valides.
+   anciens fichiers JSON (sans `inhibitor`) restent valides. Utilisés
+   par le centre de tri (garde « e = K » de T6) et Mobile Money (paliers,
+   alertes, ressources insuffisantes).
 
-4. **Presets et navigation** : `loadPreset(slug)` / `loadNet(net)` dans le
+6. **Presets et navigation** : `loadPreset(slug)` / `loadNet(net)` dans le
    store ; sélecteur de réseau dans le header du simulateur ; énoncé
    (`statement`) éditable dans la Légende et inclus dans l'export ;
    `PetriLegend` affiche maintenant l'énoncé en tête de panneau.

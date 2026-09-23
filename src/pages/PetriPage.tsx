@@ -227,7 +227,13 @@ export default function PetriPage({ onBackToPresentation }: PetriPageProps) {
               Réseau de Petri
             </h1>
             <p className="text-[10px] text-emerald-500 font-medium tracking-wide">
-              {activePreset === "mobile-money" ? "Agent Mobile Money (sujet principal)" : "Carrefour à feux tricolores (démo)"}
+              {activePreset === "centre-tri"
+                ? "Centre de tri de colis (sujet principal)"
+                : activePreset === "station-recharge"
+                ? "Station de recharge VE (sujet ajouté)"
+                : activePreset === "mobile-money"
+                ? "Agent Mobile Money (ancien sujet)"
+                : "Carrefour à feux tricolores (démo)"}
             </p>
           </div>
 
@@ -521,7 +527,7 @@ export default function PetriPage({ onBackToPresentation }: PetriPageProps) {
             <div className={`flex items-center justify-between px-5 pt-5 pb-3 border-b ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
               <div>
                 <h3 className="text-sm font-bold text-emerald-500">Aide — Réseau de Petri</h3>
-                <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Simulateur du carrefour à feux tricolores</p>
+                <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Simulateur de réseaux de Petri — centre de tri, station de recharge, Mobile Money, carrefour</p>
               </div>
               <button
                 onClick={() => setShowHelpModal(false)}
